@@ -1,0 +1,14 @@
+Name:		HEigs
+Version:	0.0.1
+cabal-version:	>= 1.2
+License:	BSD3
+License-File:	LICENSE
+Author:		Christopher Miller
+Synopsis:	An interface to ARPACK for sparse eigenvalue problems.
+Build-Type:	Simple
+
+Library
+  hs-source-dirs:	lib
+  build-depends:	base >=4, monad-loops >=0.4.2, vector>=0.10,storable-complex>=0.2
+  Exposed-modules:	Numeric.LinearAlgebra.UnsymmetricEigen
+  Extensions:		ForeignFunctionInterface

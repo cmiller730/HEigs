@@ -1,6 +1,6 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 
-module Arpack.Arpack (eigs) where
+module Numeric.LinearAlgebra.UnsymmetricEigen (eigs, Which) where
 
 import Foreign
 import Foreign.Ptr
@@ -38,28 +38,19 @@ type ProblemDim = Int
 type NumEV = Int
 type Tolerance = Double
 type MaxIter = Int
+
 setUpArpack :: ProblemDim -> Which -> NumEV -> Tolerance -> MaxIter -> 
                IO ArpackSetup
 setUpArpack n which nev tol maxIter = do
   let ncv = 2*nev
       lWorkl = 3*ncv^2 + 6*ncv
       ldv = n
-  idoPtr <- malloc :: IO (Ptr CInt)
-  bmatPtr <- malloc :: IO (Ptr CChar)
-  nPtr <- malloc :: IO (Ptr CInt)
-  whichPtr <- mallocArray 2 :: IO (Ptr CChar)
-  nevPtr <- malloc :: IO (Ptr CInt)
-  tolPtr <- malloc :: IO (Ptr CDouble)
-  residPtr <- mallocArray n :: IO (Ptr CDouble)
-  ncvPtr <- malloc :: IO (Ptr CInt)
-  vPtr <- mallocArray (n*ncv) :: IO (Ptr CDouble)
-  ldvPtr <- malloc :: IO (Ptr CInt)
-  iParamPtr <- mallocArray (11) :: IO (Ptr CInt)
-  iPntrPtr <- mallocArray (14) :: IO (Ptr CInt)
-  workdPtr <- mallocArray (3*n) :: IO (Ptr CDouble)
-  worklPtr <- mallocArray (lWorkl) :: IO (Ptr CDouble)
-  lworklPtr <- malloc :: IO (Ptr CInt)
-  infoPtr <- malloc :: IO (Ptr CInt)
+  [idoPtr,nPtr,nevPtr,ncvPtr,ldvPtr] <- sequence $ replicate 5 malloc :: IO [Ptr CInt]
+  [bmatPtr, whichPtr] <- sequence [malloc, mallocArray 2] :: IO [Ptr CChar]
+  [tolPtr, residPtr, vPtr, workdPtr, worklPtr] <- 
+    sequence $ map mallocArray [1, n, (n*ncv), (3*n), lWorkl] :: IO [Ptr CDouble]
+  [iParamPtr, iPntrPtr, lworklPtr, infoPtr] <- 
+    sequence $ map mallocArray [11, 14, 1, 1] :: IO [Ptr CInt]
   
   poke idoPtr 0
   poke bmatPtr $ castCharToCChar 'I'
@@ -77,11 +68,12 @@ setUpArpack n which nev tol maxIter = do
   
   c_dnaupd idoPtr bmatPtr nPtr whichPtr nevPtr tolPtr residPtr ncvPtr vPtr
     ldvPtr iParamPtr iPntrPtr workdPtr worklPtr lworklPtr infoPtr
-    
+  
   return (ArpackSetup idoPtr bmatPtr nPtr whichPtr nevPtr tolPtr residPtr ncvPtr vPtr
     ldvPtr iParamPtr iPntrPtr workdPtr worklPtr lworklPtr infoPtr)
-  
+
 type ArpackLinearOp = (SV.IOVector CDouble -> SV.IOVector CDouble -> IO ())
+
 
 iterateArpack :: ArpackLinearOp -> ArpackSetup -> IO ()  
 iterateArpack f ar = do
@@ -191,7 +183,7 @@ getEigenVectorReal ar idx = do
   evec <- V.freeze $ SV.slice (idx*(fromIntegral ldz')) (fromIntegral n') z'
   return $ V.map ((:+0) . realToFrac) evec
 
-data Conj = Conj | NoConj
+
 
 getEigenVectorComplex :: ArpackResults -> Int -> Bool -> IO (V.Vector (Complex Double))
 getEigenVectorComplex ar idx conj = do
@@ -204,7 +196,7 @@ getEigenVectorComplex ar idx conj = do
      then return $ V.zipWith (:+) (V.map realToFrac reEvec) (V.map ((*(-1)) . realToFrac) imEvec)
     else return $ V.zipWith (:+) (V.map realToFrac reEvec) (V.map realToFrac imEvec)
   
-  
+
 getEigenPair :: ArpackResults -> Int -> IO (Complex Double, V.Vector (Complex Double))
 getEigenPair ar idx = do 
   eig <- getEigenValue ar idx
