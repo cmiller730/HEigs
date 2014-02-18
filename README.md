@@ -20,10 +20,15 @@ eigs :: ArpackLinearOp -> ProblemDim -> Which -> NumEV -> Tolerance ->
 Where, 
 
 type ProblemDim = Int         -- The size of the linear system.
+
 data Which = LM | SM deriving Show  -- Which eigenvalues to compute Largest magnitude or Smallest magnitude
+
                                     -- will support additional modes in future.
+
 type NumEV = Int              -- The number of eigenpairs to compute.
+
 type Tolerance = Double       -- The error tolerance. Setting to 0 uses the machine eps.
+
 type MaxIter = Int            -- The maximum number of Arnoldi iterations.
 
 The return contains (False, []) if ARPACK was unsuccessful.
