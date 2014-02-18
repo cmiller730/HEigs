@@ -1,6 +1,6 @@
 Name:		HEigs
 Version:	0.0.1
-cabal-version:	>= 1.2
+cabal-version:	>= 1.8
 License:	BSD3
 License-File:	LICENSE
 Author:		Christopher Miller
@@ -9,6 +9,14 @@ Build-Type:	Simple
 
 Library
   hs-source-dirs:	lib
-  build-depends:	base >=4, monad-loops >=0.4.2, vector>=0.10,storable-complex>=0.2
+  build-depends:	base >=4, monad-loops >=0.4.2, vector,storable-complex>=0.2
   Exposed-modules:	Numeric.LinearAlgebra.UnsymmetricEigen
   Extensions:		ForeignFunctionInterface
+  extra-libraries:	arpack
+
+Test-Suite test-unsymmetric
+    hs-source-dirs:	test
+    type:       	exitcode-stdio-1.0
+    main-is:    	test-unsymmetric.hs
+    build-depends: base, tasty, tasty-hunit, tasty-quickcheck, tasty-smallcheck, HEigs, vector
+    

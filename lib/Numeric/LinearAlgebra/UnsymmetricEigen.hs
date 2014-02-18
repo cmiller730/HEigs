@@ -1,6 +1,8 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 
-module Numeric.LinearAlgebra.UnsymmetricEigen (eigs, Which) where
+module Numeric.LinearAlgebra.UnsymmetricEigen (eigs, 
+                                               Which(LM, SM),  
+                                               ArpackLinearOp) where
 
 import Foreign
 import Foreign.Ptr
@@ -13,8 +15,9 @@ import Foreign.ForeignPtr
 import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as SV
 import Control.Monad.Loops
+import Control.Monad
 import Data.Complex
-
+ 
 data Which = LM | SM deriving Show
 
 data ArpackSetup = ArpackSetup { ido :: (Ptr CInt),
@@ -42,11 +45,11 @@ type MaxIter = Int
 setUpArpack :: ProblemDim -> Which -> NumEV -> Tolerance -> MaxIter -> 
                IO ArpackSetup
 setUpArpack n which nev tol maxIter = do
-  let ncv = 2*nev
+  let ncv = min n (2*nev + 1)
       lWorkl = 3*ncv^2 + 6*ncv
       ldv = n
   [idoPtr,nPtr,nevPtr,ncvPtr,ldvPtr] <- sequence $ replicate 5 malloc :: IO [Ptr CInt]
-  [bmatPtr, whichPtr] <- sequence [malloc, mallocArray 2] :: IO [Ptr CChar]
+  [bmatPtr, whichPtr] <- sequence [mallocArray 2, mallocArray 3] :: IO [Ptr CChar]
   [tolPtr, residPtr, vPtr, workdPtr, worklPtr] <- 
     sequence $ map mallocArray [1, n, (n*ncv), (3*n), lWorkl] :: IO [Ptr CDouble]
   [iParamPtr, iPntrPtr, lworklPtr, infoPtr] <- 
@@ -62,6 +65,7 @@ setUpArpack n which nev tol maxIter = do
   poke ldvPtr $ fromIntegral ldv
   poke iParamPtr $ fromIntegral 1
   pokeElemOff iParamPtr 2 $ fromIntegral maxIter
+  pokeElemOff iParamPtr 3 $ fromIntegral 1
   pokeElemOff iParamPtr 6 $ fromIntegral 1
   poke lworklPtr $ fromIntegral lWorkl
   poke infoPtr $ fromIntegral 0
@@ -79,11 +83,14 @@ iterateArpack :: ArpackLinearOp -> ArpackSetup -> IO ()
 iterateArpack f ar = do
   workdXElem <- peek (ipntr ar)
   workdYElem <- peekElemOff (ipntr ar) 1
-  ldv' <- peek (ldv ar)
+  workdZElem <- peekElemOff (ipntr ar) 2
+  n' <- peek (n ar)
   xPtr <- newForeignPtr_ $ advancePtr (workd ar) ((fromIntegral workdXElem) - 1)
   yPtr <- newForeignPtr_ $ advancePtr (workd ar) ((fromIntegral workdYElem) - 1)
-  let x = SV.unsafeFromForeignPtr xPtr 0 (fromIntegral ldv')
-      y = SV.unsafeFromForeignPtr yPtr 0 (fromIntegral ldv')
+  --zPtr <- newForeignPtr_ $ advancePtr (workd ar) ((fromIntegral workdZElem) - 1)
+  let x = SV.unsafeFromForeignPtr xPtr 0 (fromIntegral n')
+      y = SV.unsafeFromForeignPtr yPtr 0 (fromIntegral n')
+      --z = SV.unsafeFromForeignPtr zPtr 0 (fromIntegral n')
       idoPtr = ido ar 
       bmatPtr = bmat ar
       nPtr = n ar
@@ -100,6 +107,7 @@ iterateArpack f ar = do
       worklPtr = workl ar
       lworklPtr = lworkl ar
       infoPtr = info ar
+  --SV.copy z x
   f x y
    
   c_dnaupd idoPtr bmatPtr nPtr whichPtr nevPtr tolPtr residPtr ncvPtr vPtr
@@ -115,8 +123,11 @@ arpack f n which nev tol mxItr = do
     $ iterateArpack f ar
   return ar
   
-errCheck :: ArpackSetup -> IO Bool
-errCheck ar = (peek $ info ar) >>= (\info' -> return (info' < 0))
+errCheck :: ArpackResults -> IO Bool
+errCheck ar = do 
+  info' <- (peek $ info $ arSetup ar)
+  putStrLn $ show info'
+  return (info' < 0)
 
 data ArpackResults = ArpackResults { rvec :: Ptr CInt,
                                      howmny :: Ptr CChar,
@@ -139,9 +150,9 @@ parseArpackOutput ar = do
   
   rvecPtr <- malloc :: IO (Ptr CInt)
   howmnyPtr <- malloc :: IO (Ptr CChar)
+  drVec <- SV.new ((fromIntegral nev')) :: IO (SV.IOVector CDouble)   
+  diVec <- SV.new ((fromIntegral nev')) :: IO (SV.IOVector CDouble)
   selectPtr <- mallocArray (fromIntegral ncv') :: IO (Ptr CInt)
-  drVec <- SV.new ((fromIntegral nev') + 1) :: IO (SV.IOVector CDouble)   
-  diVec <- SV.new ((fromIntegral nev') + 1) :: IO (SV.IOVector CDouble)
   zVec <- SV.new (fromIntegral (n'*(nev'+1))) :: IO (SV.IOVector CDouble)
   ldzPtr <- malloc :: IO (Ptr CInt)
   sigmarPtr <- malloc :: IO (Ptr CDouble)
@@ -172,7 +183,7 @@ getEigenValue ar idx = do
       imEigs = di ar
   re <- SV.read reEigs idx
   im <- SV.read imEigs idx
-  return ((realToFrac re) :+ (realToFrac im))
+  return ((realToFrac re :: Double) :+ (realToFrac im :: Double))
 
 
 getEigenVectorReal :: ArpackResults -> Int -> IO (V.Vector (Complex Double))
@@ -209,13 +220,13 @@ getEigenPair ar idx = do
 
 eigs :: ArpackLinearOp -> ProblemDim -> Which -> NumEV -> Tolerance -> 
         MaxIter -> IO (Bool, [(Complex Double, V.Vector (Complex Double))])
-eigs f n which nev tol iters = do
-  ar <- arpack f n which nev tol iters
-  err <- errCheck ar
+eigs f n which nev tol' iters = do
+  ar <- arpack f n which nev tol' iters
+  arOut <- parseArpackOutput ar
+  err <- errCheck arOut
   if (err)
     then do return (False,[]) 
     else do
-      arOut <- parseArpackOutput ar
       pairs <- sequence $ map (getEigenPair arOut) [0..(nev-1)] 
       return (True,pairs)
 
@@ -232,3 +243,4 @@ foreign import ccall unsafe "arpack.h dneupd_"
               Ptr CDouble -> Ptr CDouble -> Ptr CInt -> Ptr CDouble -> 
               Ptr CInt -> Ptr CInt -> Ptr CInt -> Ptr CDouble -> Ptr CDouble -> 
               Ptr CInt -> Ptr CInt -> IO ()
+              
