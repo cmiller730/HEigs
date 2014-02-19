@@ -6,10 +6,25 @@ License-File:	LICENSE
 Author:		Christopher Miller
 Synopsis:	An interface to ARPACK for sparse eigenvalue problems.
 Build-Type:	Simple
+Category:	Numeric, Linear Algepra, Eigenvalues, Sparse
+Maintainer:	cmiller730@gmail.com
+Description:	The aim of this package is to emulate MATLAB and SciPy's 'eigs'
+		routines for finding a small number of eigenvalues from large
+		sparse linear systems. 
+
+		Currently only supports a limited subset of ARPACK's functionality.
+		I plan to add more in the future but if there's a specific
+		type of eigenvalue problem you need solved please email and I'll
+		make supporting that a priority.
+
+source-repository head
+  type:		  git
+  location: https://github.com/cmiller730/HEigs/
+  tag: 0.0.1
 
 Library
   hs-source-dirs:	lib
-  build-depends:	base >=4, monad-loops >=0.4.2, vector,storable-complex>=0.2
+  build-depends:	base <=4, monad-loops >=0.4.2, vector,storable-complex>=0.2
   Exposed-modules:	Numeric.LinearAlgebra.UnsymmetricEigen
   Extensions:		ForeignFunctionInterface
   extra-libraries:	arpack
