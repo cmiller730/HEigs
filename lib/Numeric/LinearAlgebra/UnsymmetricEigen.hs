@@ -2,6 +2,10 @@
 
 module Numeric.LinearAlgebra.UnsymmetricEigen (eigs, 
                                                Which(LM, SM),  
+                                               ProblemDim,
+                                               NumEV,
+                                               Tolerance,
+                                               MaxIter,
                                                ArpackLinearOp) where
 
 import Foreign
@@ -12,14 +16,20 @@ import Foreign.C.String
 import Foreign.Storable
 import Foreign.Storable.Complex
 import Foreign.ForeignPtr
+import Foreign.ForeignPtr.Unsafe as FPUnsafe
 import qualified Data.Vector.Storable as V
 import qualified Data.Vector.Storable.Mutable as SV
 import Control.Monad.Loops
 import Control.Monad
 import Data.Complex
  
+-- |Designates which eigenvalues to compute
+-- LM = Largest Magnitude
+-- SM = Smallest Magnitude
 data Which = LM | SM deriving Show
 
+-- |Encapsulates the arrays and data needed to invoke
+-- _naupd routines in ARPACK
 data ArpackSetup = ArpackSetup { ido :: (Ptr CInt),
                                  bmat :: (Ptr CChar),
                                  n :: (Ptr CInt),
@@ -42,6 +52,14 @@ type NumEV = Int
 type Tolerance = Double
 type MaxIter = Int
 
+-- |The 'setUpArpack' function allocates the arrays and data
+-- needed by ARPACK to solve an eigenvalue problem
+-- Params:
+-- n - The size of the square matrix.
+-- which - Which eigenvalues to compute.
+-- nev - The number of eigenvalues to compute.
+-- tol - The tolerance for ARPACK's Arnoldi iterations. Use 0 for machine precision.
+-- maxIter - The maximum number of iterations ARPACK should perform.
 setUpArpack :: ProblemDim -> Which -> NumEV -> Tolerance -> MaxIter -> 
                IO ArpackSetup
 setUpArpack n which nev tol maxIter = do
@@ -76,9 +94,15 @@ setUpArpack n which nev tol maxIter = do
   return (ArpackSetup idoPtr bmatPtr nPtr whichPtr nevPtr tolPtr residPtr ncvPtr vPtr
     ldvPtr iParamPtr iPntrPtr workdPtr worklPtr lworklPtr infoPtr)
 
+-- |Functions of type 'ArpackLinearOp' represent a matrix vector product.
+-- The values in the second vector should be overwritten by operator applied 
+-- to the first.
 type ArpackLinearOp = (SV.IOVector CDouble -> SV.IOVector CDouble -> IO ())
 
-
+-- |Invoke ARPACK's iteration through the reverse communication interface.
+-- Params:
+-- f - A linear op encoding the matrix whose eigenvalues we want.
+-- ArpackSetup - An ArpackSetup already allocated by 'SetUpArpack'.
 iterateArpack :: ArpackLinearOp -> ArpackSetup -> IO ()  
 iterateArpack f ar = do
   workdXElem <- peek (ipntr ar)
@@ -164,11 +188,11 @@ parseArpackOutput ar = do
   poke ldzPtr n'
   
   let (drfPtr,_,_) = SV.unsafeToForeignPtr drVec
-      drPtr = unsafeForeignPtrToPtr drfPtr
+      drPtr = FPUnsafe.unsafeForeignPtrToPtr drfPtr
       (difPtr,_,_) = SV.unsafeToForeignPtr diVec
-      diPtr = unsafeForeignPtrToPtr difPtr
+      diPtr = FPUnsafe.unsafeForeignPtrToPtr difPtr
       (zfPtr,_,_) = SV.unsafeToForeignPtr zVec
-      zPtr = unsafeForeignPtrToPtr zfPtr
+      zPtr = FPUnsafe.unsafeForeignPtrToPtr zfPtr
   c_dneupd rvecPtr howmnyPtr selectPtr drPtr diPtr zPtr ldzPtr sigmarPtr
     sigmaiPtr workevPtr (bmat ar) (n ar) (which ar) (nev ar) (tol ar)
     (resid ar) (ncv ar) (v ar) (ldv ar) (iparam ar) (ipntr ar) (workd ar) 
@@ -218,8 +242,15 @@ getEigenPair ar idx = do
   evec' <- evec
   return (eig,evec')
 
-eigs :: ArpackLinearOp -> ProblemDim -> Which -> NumEV -> Tolerance -> 
-        MaxIter -> IO (Bool, [(Complex Double, V.Vector (Complex Double))])
+-- |The function 'eigs' computes a few eigenvalues of a real valued
+-- unsymmetric matrix by invoking the ARPACK library.
+eigs :: ArpackLinearOp -- ^ A linear op that encodes the matrix who's eigenvalues we want. 
+        -> ProblemDim -- ^ The size of the matrix (The matrix is assumed to be square).
+        -> Which -- ^ 'Which' eigenvalues to compute. 
+        -> NumEV -- ^ The number of eigenvalues to compute. 
+        -> Tolerance -- ^ The tolerance on ARPACK's iteration. Set to 0 for machine precision. 
+        -> MaxIter -- ^The maximum number of iterations.
+        -> IO (Bool, [(Complex Double, V.Vector (Complex Double))]) -- ^First element is true if ARPACK converged. If converged the second element is a list of eigenpairs.
 eigs f n which nev tol' iters = do
   ar <- arpack f n which nev tol' iters
   arOut <- parseArpackOutput ar
