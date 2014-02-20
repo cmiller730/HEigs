@@ -32,6 +32,13 @@ type MaxIter = Int            -- The maximum number of Arnoldi iterations.
 The return contains (False, []) if ARPACK was unsuccessful.
 Otherwise the second element in the tuple contains a list of the computed NumEV eigenvalues and eigenvectors.
 
+Notes
+======
+Currently building with
+ARPACK: http://forge.scilab.org/index.php/p/arpack-ng/source/tree/3.1.5/
+OpenBlas: https://github.com/xianyi/OpenBLAS/tree/7b8604ea29f7a7c258b3d7faf1f81eef750280f6
+
+
 History
 =======
 
