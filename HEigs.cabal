@@ -24,14 +24,13 @@ source-repository head
 
 Library
   hs-source-dirs:	lib
-  build-depends:	base <=4, monad-loops >=0.4.2, vector,storable-complex>=0.2
+  build-depends:	base <=4.6.0.1, monad-loops >=0.4.2, vector,storable-complex>=0.2
   Exposed-modules:	Numeric.LinearAlgebra.UnsymmetricEigen
   Extensions:		ForeignFunctionInterface
-  extra-libraries:	arpack
+  extra-libraries:	arpack, openblas
 
 Test-Suite test-unsymmetric
     hs-source-dirs:	test
     type:       	exitcode-stdio-1.0
     main-is:    	test-unsymmetric.hs
     build-depends: base, tasty, tasty-hunit, tasty-quickcheck, tasty-smallcheck, HEigs, vector
-    
